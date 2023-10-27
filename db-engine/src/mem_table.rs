@@ -1,3 +1,5 @@
+use crate::prelude::*;
+
 /// Timestamp size (16 bytes)
 const TIMESTAMP_SIZE: usize = 16;
 
@@ -6,21 +8,8 @@ const TOMBSTONE_SIZE: usize = 1;
 
 /// MemTable holds a sorted list of the latest writes.
 pub struct MemTable {
-    entries: Vec<MemTableEntry>,
+    entries: Vec<Entry>,
     size: usize,
-}
-
-/// MemTable Entry
-pub struct MemTableEntry {
-    pub key: Vec<u8>,
-    pub value: Option<Vec<u8>>, // the vaule will be None when the entry is deleted
-    pub timestamp: u128,
-}
-
-impl MemTableEntry {
-    pub fn is_deleted(&self) -> bool {
-        self.value.is_none()
-    }
 }
 
 impl MemTable {
@@ -34,7 +23,7 @@ impl MemTable {
     /// Get Key-Value pair record in MemTable.
     ///
     /// Return None if no record is being found.
-    pub fn get(&self, key: &[u8]) -> Option<&MemTableEntry> {
+    pub fn get(&self, key: &[u8]) -> Option<&Entry> {
         if let Ok(idx) = self.get_index(key) {
             return Some(&self.entries[idx]);
         }
@@ -44,7 +33,7 @@ impl MemTable {
 
     /// Set Key-Value pair in MemTable.
     pub fn set(&mut self, key: &[u8], value: &[u8], timestamp: u128) {
-        let entry = MemTableEntry {
+        let entry = Entry {
             key: key.to_vec(),
             value: Some(value.to_vec()),
             timestamp,
@@ -72,7 +61,7 @@ impl MemTable {
     /// Delete Key-Value pair in MemTable.
     /// The deletion is done by Tombstone.
     pub fn delete(&mut self, key: &[u8], timestamp: u128) {
-        let entry = MemTableEntry {
+        let entry = Entry {
             key: key.to_vec(),
             value: None,
             timestamp,
