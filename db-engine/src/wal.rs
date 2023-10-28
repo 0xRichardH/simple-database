@@ -1,12 +1,12 @@
 use anyhow::Result;
 use std::{
-    fs::{File, OpenOptions},
+    fs::{remove_file, File, OpenOptions},
     io::{self, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::prelude::*;
+use crate::{mem_table::MemTable, prelude::*, utils};
 
 /// Write Ahead Log
 pub struct WAL {
@@ -19,14 +19,51 @@ impl WAL {
     pub fn new(dir: &Path) -> Result<Self> {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
         let path = Path::new(dir).join(format!("{}.wal", timestamp));
-        Self::from_path(path)
+        Self::from_path(&path)
     }
 
     /// Creates a WAL from an existing file path.
-    pub fn from_path(path: PathBuf) -> Result<Self> {
+    pub fn from_path(path: &Path) -> Result<Self> {
         let file = OpenOptions::new().append(true).create(true).open(&path)?;
         let writer = BufWriter::new(file);
-        Ok(Self { writer, path })
+        Ok(Self {
+            writer,
+            path: path.to_owned(),
+        })
+    }
+
+    /// Restore our MemTable and WAL from a directory.
+    /// We need to replay all of the operations.
+    pub fn restore_from_dir(dir: &Path) -> Result<(WAL, MemTable)> {
+        let mut wal_files = utils::get_files_with_ext(dir, "wal")?;
+        wal_files.sort();
+
+        let mut new_memtable = MemTable::new();
+        let mut new_wal = WAL::new(dir)?;
+        for file in wal_files.iter() {
+            let wal = WAL::from_path(file)?;
+            let wal_iter: WALIterator = wal.try_into()?;
+            for entry in wal_iter {
+                let key = entry.key.as_slice();
+                let timestamp = entry.timestamp;
+                if entry.is_deleted() {
+                    new_wal.delete(key, timestamp)?;
+                    new_memtable.delete(key, timestamp);
+                } else {
+                    let value = entry.value.unwrap().as_slice();
+                    new_wal.set(key, value, timestamp)?;
+                    new_memtable.set(key, value, timestamp);
+                }
+            }
+        }
+        new_wal.flush()?;
+
+        // clean up the old WAL files
+        for file in wal_files.into_iter() {
+            remove_file(file)?;
+        }
+
+        Ok((new_wal, new_memtable))
     }
 
     /// Sets a Key-Value pair and the operation is appended to the WAL.
@@ -65,5 +102,13 @@ impl Iterator for WALIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         Entry::read_from(&mut self.reader)
+    }
+}
+
+impl TryFrom<WAL> for WALIterator {
+    type Error = io::Error;
+
+    fn try_from(value: WAL) -> std::result::Result<Self, Self::Error> {
+        WALIterator::new(value.path)
     }
 }
