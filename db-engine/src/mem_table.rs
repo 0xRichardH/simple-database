@@ -80,6 +80,18 @@ impl MemTable {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn entries(&self) -> &[Entry] {
+        &self.entries
+    }
+
     /// Perform the binary search to find the index of the key
     fn get_index(&self, key: &[u8]) -> Result<usize, usize> {
         self.entries

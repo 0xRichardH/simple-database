@@ -18,7 +18,8 @@ impl WAL {
     /// Creates a new WAL in a given directory.
     pub fn new(dir: &Path) -> Result<Self> {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
-        let path = Path::new(dir).join(format!("{}.wal", timestamp));
+        let rand_uuid = uuid::Uuid::new_v4();
+        let path = Path::new(dir).join(format!("{}-{}.wal", timestamp, rand_uuid));
         Self::from_path(&path)
     }
 
@@ -50,9 +51,9 @@ impl WAL {
                     new_wal.delete(key, timestamp)?;
                     new_memtable.delete(key, timestamp);
                 } else {
-                    let value = entry.value.unwrap().as_slice();
-                    new_wal.set(key, value, timestamp)?;
-                    new_memtable.set(key, value, timestamp);
+                    let value = entry.value.unwrap();
+                    new_wal.set(key, value.as_slice(), timestamp)?;
+                    new_memtable.set(key, value.as_slice(), timestamp);
                 }
             }
         }
@@ -110,5 +111,237 @@ impl TryFrom<WAL> for WALIterator {
 
     fn try_from(value: WAL) -> std::result::Result<Self, Self::Error> {
         WALIterator::new(value.path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempdir::TempDir;
+
+    use crate::prelude::Entry;
+    use crate::wal::WAL;
+    use std::fs::{metadata, File, OpenOptions};
+    use std::io::BufReader;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn check_entry(
+        reader: &mut BufReader<File>,
+        key: &[u8],
+        value: Option<&[u8]>,
+        timestamp: u128,
+        deleted: bool,
+    ) {
+        let entry = Entry::read_from(reader).unwrap();
+        assert_eq!(entry.key, key);
+        assert_eq!(entry.value.as_deref(), value);
+        assert_eq!(entry.timestamp, timestamp);
+        assert_eq!(entry.is_deleted(), deleted);
+    }
+
+    #[test]
+    fn test_write_one() {
+        let temp_dir = TempDir::new("test_write_one").unwrap();
+        let dir = temp_dir.path();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_micros();
+
+        let mut wal = WAL::new(dir).unwrap();
+        wal.set(b"Lime", b"Lime Smoothie", timestamp).unwrap();
+        wal.flush().unwrap();
+
+        let file = OpenOptions::new().read(true).open(&wal.path).unwrap();
+        let mut reader = BufReader::new(file);
+
+        check_entry(
+            &mut reader,
+            b"Lime",
+            Some(b"Lime Smoothie"),
+            timestamp,
+            false,
+        );
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_write_many() {
+        let temp_dir = TempDir::new("test_write_many").unwrap();
+        let dir = temp_dir.path();
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_micros();
+
+        let entries: Vec<(&[u8], Option<&[u8]>)> = vec![
+            (b"Apple", Some(b"Apple Smoothie")),
+            (b"Lime", Some(b"Lime Smoothie")),
+            (b"Orange", Some(b"Orange Smoothie")),
+        ];
+
+        let mut wal = WAL::new(dir).unwrap();
+
+        for e in entries.iter() {
+            wal.set(e.0, e.1.unwrap(), timestamp).unwrap();
+        }
+        wal.flush().unwrap();
+
+        let file = OpenOptions::new().read(true).open(&wal.path).unwrap();
+        let mut reader = BufReader::new(file);
+
+        for e in entries.iter() {
+            check_entry(&mut reader, e.0, e.1, timestamp, false);
+        }
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_write_delete() {
+        let temp_dir = TempDir::new("test_write_delete").unwrap();
+        let dir = temp_dir.path();
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_micros();
+
+        let entries: Vec<(&[u8], Option<&[u8]>)> = vec![
+            (b"Apple", Some(b"Apple Smoothie")),
+            (b"Lime", Some(b"Lime Smoothie")),
+            (b"Orange", Some(b"Orange Smoothie")),
+        ];
+
+        let mut wal = WAL::new(dir).unwrap();
+
+        for e in entries.iter() {
+            wal.set(e.0, e.1.unwrap(), timestamp).unwrap();
+        }
+        for e in entries.iter() {
+            wal.delete(e.0, timestamp).unwrap();
+        }
+
+        wal.flush().unwrap();
+
+        let file = OpenOptions::new().read(true).open(&wal.path).unwrap();
+        let mut reader = BufReader::new(file);
+
+        for e in entries.iter() {
+            check_entry(&mut reader, e.0, e.1, timestamp, false);
+        }
+        for e in entries.iter() {
+            check_entry(&mut reader, e.0, None, timestamp, true);
+        }
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_read_wal_none() {
+        let temp_dir = TempDir::new("test_read_wal_none").unwrap();
+        let dir = temp_dir.path();
+
+        let (new_wal, new_mem_table) = WAL::restore_from_dir(dir).unwrap();
+        assert_eq!(new_mem_table.len(), 0);
+
+        let m = metadata(new_wal.path).unwrap();
+        assert_eq!(m.len(), 0);
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_read_wal_one() {
+        let temp_dir = TempDir::new("test_read_wal_one").unwrap();
+        let dir = temp_dir.path();
+
+        let entries: Vec<(&[u8], Option<&[u8]>)> = vec![
+            (b"Apple", Some(b"Apple Smoothie")),
+            (b"Lime", Some(b"Lime Smoothie")),
+            (b"Orange", Some(b"Orange Smoothie")),
+        ];
+
+        let mut wal = WAL::new(dir).unwrap();
+
+        for (i, e) in entries.iter().enumerate() {
+            wal.set(e.0, e.1.unwrap(), i as u128).unwrap();
+        }
+        wal.flush().unwrap();
+
+        let (new_wal, new_mem_table) = WAL::restore_from_dir(dir).unwrap();
+
+        let file = OpenOptions::new().read(true).open(&new_wal.path).unwrap();
+        let mut reader = BufReader::new(file);
+
+        for (i, e) in entries.iter().enumerate() {
+            check_entry(&mut reader, e.0, e.1, i as u128, false);
+
+            let mem_e = new_mem_table.get(e.0).unwrap();
+            assert_eq!(mem_e.key, e.0);
+            assert_eq!(mem_e.value.as_ref().unwrap().as_slice(), e.1.unwrap());
+            assert_eq!(mem_e.timestamp, i as u128);
+        }
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_read_wal_multiple() {
+        let temp_dir = TempDir::new("test_read_wal_multiple").unwrap();
+        let dir = temp_dir.path();
+
+        let entries_1: Vec<(&[u8], Option<&[u8]>)> = vec![
+            (b"Apple", Some(b"Apple Smoothie")),
+            (b"Lime", Some(b"Lime Smoothie")),
+            (b"Orange", Some(b"Orange Smoothie")),
+        ];
+        let mut wal_1 = WAL::new(dir).unwrap();
+        for (i, e) in entries_1.iter().enumerate() {
+            wal_1.set(e.0, e.1.unwrap(), i as u128).unwrap();
+        }
+        wal_1.flush().unwrap();
+
+        let entries_2: Vec<(&[u8], Option<&[u8]>)> = vec![
+            (b"Strawberry", Some(b"Strawberry Smoothie")),
+            (b"Blueberry", Some(b"Blueberry Smoothie")),
+            (b"Orange", Some(b"Orange Milkshake")),
+        ];
+        let mut wal_2 = WAL::new(dir).unwrap();
+        for (i, e) in entries_2.iter().enumerate() {
+            wal_2.set(e.0, e.1.unwrap(), (i + 3) as u128).unwrap();
+        }
+        wal_2.flush().unwrap();
+
+        let (new_wal, new_mem_table) = WAL::restore_from_dir(dir).unwrap();
+
+        let file = OpenOptions::new().read(true).open(&new_wal.path).unwrap();
+        let mut reader = BufReader::new(file);
+
+        for (i, e) in entries_1.iter().enumerate() {
+            check_entry(&mut reader, e.0, e.1, i as u128, false);
+
+            let mem_e = new_mem_table.get(e.0).unwrap();
+            if i != 2 {
+                assert_eq!(mem_e.key, e.0);
+                assert_eq!(mem_e.value.as_ref().unwrap().as_slice(), e.1.unwrap());
+                assert_eq!(mem_e.timestamp, i as u128);
+            } else {
+                assert_eq!(mem_e.key, e.0);
+                assert_ne!(mem_e.value.as_ref().unwrap().as_slice(), e.1.unwrap());
+                assert_ne!(mem_e.timestamp, i as u128);
+            }
+        }
+        for (i, e) in entries_2.iter().enumerate() {
+            check_entry(&mut reader, e.0, e.1, (i + 3) as u128, false);
+
+            let mem_e = new_mem_table.get(e.0).unwrap();
+            assert_eq!(mem_e.key, e.0);
+            assert_eq!(mem_e.value.as_ref().unwrap().as_slice(), e.1.unwrap());
+            assert_eq!(mem_e.timestamp, (i + 3) as u128);
+        }
+
+        temp_dir.close().unwrap();
     }
 }

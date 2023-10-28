@@ -10,8 +10,10 @@ pub fn get_files_with_ext(dir: &Path, ext: &str) -> Result<Vec<PathBuf>> {
 
     for file in read_dir(dir)? {
         let path = file?.path();
-        if let Some(e) = path.extension() && e == ext {
-            files.push(path);
+        if let Some(e) = path.extension() {
+            if e == ext {
+                files.push(path);
+            }
         }
     }
 
