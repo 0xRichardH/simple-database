@@ -33,11 +33,7 @@ impl MemTable {
 
     /// Set Key-Value pair in MemTable.
     pub fn set(&mut self, key: &[u8], value: &[u8], timestamp: u128) {
-        let entry = Entry {
-            key: key.to_vec(),
-            value: Some(value.to_vec()),
-            timestamp,
-        };
+        let entry = Entry::new(key.to_vec(), Some(value.to_vec()), timestamp);
         let key_size = key.len();
         let value_size = value.len();
 
