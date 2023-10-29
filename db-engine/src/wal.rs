@@ -9,12 +9,12 @@ use std::{
 use crate::{mem_table::MemTable, prelude::*, utils};
 
 /// Write Ahead Log
-pub struct WAL {
+pub struct WriteAheadLog {
     path: PathBuf,
     writer: BufWriter<File>,
 }
 
-impl WAL {
+impl WriteAheadLog {
     /// Creates a new WAL in a given directory.
     pub fn new(dir: &Path) -> Result<Self> {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
@@ -25,7 +25,7 @@ impl WAL {
 
     /// Creates a WAL from an existing file path.
     pub fn from_path(path: &Path) -> Result<Self> {
-        let file = OpenOptions::new().append(true).create(true).open(&path)?;
+        let file = OpenOptions::new().append(true).create(true).open(path)?;
         let writer = BufWriter::new(file);
         Ok(Self {
             writer,
@@ -35,14 +35,14 @@ impl WAL {
 
     /// Restore our MemTable and WAL from a directory.
     /// We need to replay all of the operations.
-    pub fn restore_from_dir(dir: &Path) -> Result<(WAL, MemTable)> {
+    pub fn restore_from_dir(dir: &Path) -> Result<(WriteAheadLog, MemTable)> {
         let mut wal_files = utils::get_files_with_ext(dir, "wal")?;
         wal_files.sort();
 
         let mut new_memtable = MemTable::new();
-        let mut new_wal = WAL::new(dir)?;
+        let mut new_wal = WriteAheadLog::new(dir)?;
         for file in wal_files.iter() {
-            let wal = WAL::from_path(file)?;
+            let wal = WriteAheadLog::from_path(file)?;
             let wal_iter: WALIterator = wal.try_into()?;
             for entry in wal_iter {
                 let key = entry.key.as_slice();
@@ -106,10 +106,10 @@ impl Iterator for WALIterator {
     }
 }
 
-impl TryFrom<WAL> for WALIterator {
+impl TryFrom<WriteAheadLog> for WALIterator {
     type Error = io::Error;
 
-    fn try_from(value: WAL) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: WriteAheadLog) -> std::result::Result<Self, Self::Error> {
         WALIterator::new(value.path)
     }
 }
@@ -119,7 +119,7 @@ mod tests {
     use tempdir::TempDir;
 
     use crate::prelude::Entry;
-    use crate::wal::WAL;
+    use crate::wal::WriteAheadLog;
     use std::fs::{metadata, File, OpenOptions};
     use std::io::BufReader;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -147,7 +147,7 @@ mod tests {
             .unwrap()
             .as_micros();
 
-        let mut wal = WAL::new(dir).unwrap();
+        let mut wal = WriteAheadLog::new(dir).unwrap();
         wal.set(b"Lime", b"Lime Smoothie", timestamp).unwrap();
         wal.flush().unwrap();
 
@@ -181,7 +181,7 @@ mod tests {
             (b"Orange", Some(b"Orange Smoothie")),
         ];
 
-        let mut wal = WAL::new(dir).unwrap();
+        let mut wal = WriteAheadLog::new(dir).unwrap();
 
         for e in entries.iter() {
             wal.set(e.0, e.1.unwrap(), timestamp).unwrap();
@@ -214,7 +214,7 @@ mod tests {
             (b"Orange", Some(b"Orange Smoothie")),
         ];
 
-        let mut wal = WAL::new(dir).unwrap();
+        let mut wal = WriteAheadLog::new(dir).unwrap();
 
         for e in entries.iter() {
             wal.set(e.0, e.1.unwrap(), timestamp).unwrap();
@@ -243,7 +243,7 @@ mod tests {
         let temp_dir = TempDir::new("test_read_wal_none").unwrap();
         let dir = temp_dir.path();
 
-        let (new_wal, new_mem_table) = WAL::restore_from_dir(dir).unwrap();
+        let (new_wal, new_mem_table) = WriteAheadLog::restore_from_dir(dir).unwrap();
         assert_eq!(new_mem_table.len(), 0);
 
         let m = metadata(new_wal.path).unwrap();
@@ -263,14 +263,14 @@ mod tests {
             (b"Orange", Some(b"Orange Smoothie")),
         ];
 
-        let mut wal = WAL::new(dir).unwrap();
+        let mut wal = WriteAheadLog::new(dir).unwrap();
 
         for (i, e) in entries.iter().enumerate() {
             wal.set(e.0, e.1.unwrap(), i as u128).unwrap();
         }
         wal.flush().unwrap();
 
-        let (new_wal, new_mem_table) = WAL::restore_from_dir(dir).unwrap();
+        let (new_wal, new_mem_table) = WriteAheadLog::restore_from_dir(dir).unwrap();
 
         let file = OpenOptions::new().read(true).open(&new_wal.path).unwrap();
         let mut reader = BufReader::new(file);
@@ -297,7 +297,7 @@ mod tests {
             (b"Lime", Some(b"Lime Smoothie")),
             (b"Orange", Some(b"Orange Smoothie")),
         ];
-        let mut wal_1 = WAL::new(dir).unwrap();
+        let mut wal_1 = WriteAheadLog::new(dir).unwrap();
         for (i, e) in entries_1.iter().enumerate() {
             wal_1.set(e.0, e.1.unwrap(), i as u128).unwrap();
         }
@@ -308,13 +308,13 @@ mod tests {
             (b"Blueberry", Some(b"Blueberry Smoothie")),
             (b"Orange", Some(b"Orange Milkshake")),
         ];
-        let mut wal_2 = WAL::new(dir).unwrap();
+        let mut wal_2 = WriteAheadLog::new(dir).unwrap();
         for (i, e) in entries_2.iter().enumerate() {
             wal_2.set(e.0, e.1.unwrap(), (i + 3) as u128).unwrap();
         }
         wal_2.flush().unwrap();
 
-        let (new_wal, new_mem_table) = WAL::restore_from_dir(dir).unwrap();
+        let (new_wal, new_mem_table) = WriteAheadLog::restore_from_dir(dir).unwrap();
 
         let file = OpenOptions::new().read(true).open(&new_wal.path).unwrap();
         let mut reader = BufReader::new(file);
