@@ -49,8 +49,12 @@ impl SSTableIndexBuilder {
 
 impl SSTableIndex {
     /// Insert the Entry Key and SSTable Offset to the SSTable Index
-    pub fn insert(&mut self, key: Vec<u8>, offset: u64) {
-        self.indexs.insert(key, offset);
+    pub fn insert(&mut self, key: &[u8], offset: u64) {
+        self.indexs.insert(key.to_vec(), offset);
+    }
+
+    pub fn get(&self, key: &[u8]) -> Option<&u64> {
+        self.indexs.get(key)
     }
 
     /// Persist the indexs to file
@@ -63,10 +67,6 @@ impl SSTableIndex {
         let bytes = bincode::serialize(&self.indexs).context("serialize idx to bytes")?;
         file.write_all(&bytes).context("write idx bytes to file")?;
         Ok(())
-    }
-
-    pub fn indexs(&self) -> &BTreeMap<Vec<u8>, u64> {
-        &self.indexs
     }
 }
 
@@ -83,29 +83,29 @@ mod tests {
 
         // create SSTableIndex
         let mut idx = SSTableIndexBuilder::new(path.clone()).indexs()?.build();
-        assert_eq!(idx.indexs().len(), 0);
-        idx.insert(b"hello".to_vec(), 1);
-        assert_eq!(idx.indexs().len(), 1);
-        assert_eq!(idx.indexs().get(&b"hello".to_vec()), Some(&1));
+        assert_eq!(idx.indexs.len(), 0);
+        idx.insert(b"hello", 1);
+        assert_eq!(idx.indexs.len(), 1);
+        assert_eq!(idx.get(b"hello"), Some(&1));
 
         // persist to file
         idx.persist()?;
 
         // load from file
         let mut idx_2 = SSTableIndexBuilder::new(path.clone()).indexs()?.build();
-        assert_eq!(idx_2.indexs().len(), 1);
-        assert_eq!(idx_2.indexs().get(&b"hello".to_vec()), Some(&1));
+        assert_eq!(idx_2.indexs.len(), 1);
+        assert_eq!(idx_2.get(b"hello"), Some(&1));
 
         // inesert new key and value
-        idx_2.insert(b"world".to_vec(), 2);
-        assert_eq!(idx.indexs().len(), 1);
-        assert_eq!(idx_2.indexs().len(), 2);
-        assert_eq!(idx_2.indexs().get(&b"world".to_vec()), Some(&2));
+        idx_2.insert(b"world", 2);
+        assert_eq!(idx.indexs.len(), 1);
+        assert_eq!(idx_2.indexs.len(), 2);
+        assert_eq!(idx_2.get(b"world"), Some(&2));
 
         // persist to file
         idx_2.persist()?;
         let idx_3 = SSTableIndexBuilder::new(path).indexs()?.build();
-        assert_eq!(idx_3.indexs().len(), 2);
+        assert_eq!(idx_3.indexs.len(), 2);
 
         temp_dir.close().unwrap();
         Ok(())
