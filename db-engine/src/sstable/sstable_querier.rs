@@ -56,11 +56,9 @@ mod tests {
         let entry_1 = Entry::new(b"test1".to_vec(), Some(b"hello").map(|i| i.to_vec()), 1);
         let entry_2 = Entry::new(b"test2".to_vec(), Some(b"hello").map(|i| i.to_vec()), 2);
         let mut sst_writer_1 = SSTableWriter::new(&db_path_1)?;
-        sst_writer_1.set(&entry_1)?;
-        sst_writer_1.flush()?;
+        sst_writer_1.set(&entry_1)?.flush()?;
         let mut sst_writer_2 = SSTableWriter::new(&db_path_2)?;
-        sst_writer_2.set(&entry_2)?;
-        sst_writer_2.flush()?;
+        sst_writer_2.set(&entry_2)?.flush()?;
 
         // test SSTableQuerier
         let querier = SSTableQuerier::new(&dir.to_path_buf())?;

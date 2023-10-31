@@ -37,17 +37,17 @@ impl SSTableWriter {
     }
 
     /// Set Entry to SSTable
-    pub fn set(&mut self, entry: &Entry) -> io::Result<()> {
+    pub fn set(&mut self, entry: &Entry) -> io::Result<&mut Self> {
         entry.write_to(&mut self.writer)?;
         self.index.insert(entry.key.as_slice(), self.offset);
         self.offset += self.writer.stream_position()?;
-        Ok(())
+        Ok(self)
     }
 
     /// Flush SSTable to the file
-    pub fn flush(&mut self) -> Result<()> {
+    pub fn flush(&mut self) -> Result<&mut Self> {
         self.index.persist()?;
         self.writer.flush()?;
-        Ok(())
+        Ok(self)
     }
 }

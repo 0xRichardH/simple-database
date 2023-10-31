@@ -36,11 +36,9 @@ mod tests {
         let entry_2 = Entry::new(b"test2".to_vec(), Some(b"world").map(|i| i.to_vec()), 2);
 
         // seed the data
-        sst_writer.set(&entry_1)?;
-        sst_writer.set(&entry_2)?;
+        sst_writer.set(&entry_1)?.set(&entry_2)?.flush()?;
 
         // persist to file
-        sst_writer.flush()?;
         let mut sst_reader = SSTableReader::new(&path)?;
         assert_entry(&sst_reader.get(b"test1").unwrap(), &entry_1);
         assert_entry(&sst_reader.get(b"test2").unwrap(), &entry_2);
@@ -58,16 +56,14 @@ mod tests {
         // seed
         let mut sst_writer = SSTableWriter::new(&path)?;
         let entry_1 = Entry::new(b"test1".to_vec(), Some(b"hello").map(|i| i.to_vec()), 1);
-        sst_writer.set(&entry_1)?;
-        sst_writer.flush()?;
+        sst_writer.set(&entry_1)?.flush()?;
         let mut sst_reader = SSTableReader::new(&path)?;
         assert_entry(&sst_reader.get(b"test1").unwrap(), &entry_1);
 
         // load from existing file
         let mut new_sst_writer = SSTableWriter::new(&path)?;
         let entry_2 = Entry::new(b"test2".to_vec(), Some(b"world").map(|i| i.to_vec()), 2);
-        new_sst_writer.set(&entry_2)?;
-        new_sst_writer.flush()?;
+        new_sst_writer.set(&entry_2)?.flush()?;
         let mut new_sst_reader = SSTableReader::new(&path)?;
         assert_entry(&new_sst_reader.get(b"test1").unwrap(), &entry_1);
         assert_entry(&new_sst_reader.get(b"test2").unwrap(), &entry_2);
