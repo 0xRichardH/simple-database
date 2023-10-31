@@ -7,7 +7,10 @@ use std::{
 
 use crate::prelude::*;
 
-use super::{get_index_path, SSTableIndex, SSTableIndexBuilder};
+use super::{
+    get_index_path,
+    sstable_index::{SSTableIndex, SSTableIndexBuilder},
+};
 
 /// Sorted String Table
 pub struct SSTableWriter {

@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
-use crate::{mem_table::MemTable, prelude::*, utils::*, wal::WriteAheadLog};
+use crate::{
+    mem_table::MemTable, prelude::*, sstable::SSTableQuerier, utils::*, wal::WriteAheadLog,
+};
 
 pub struct Database {
     dir: PathBuf,
@@ -24,10 +26,16 @@ impl Database {
     }
 
     pub fn get(self, key: &[u8]) -> Option<DbEntry> {
-        let mut entry_opt = self.mem_table.get(key);
+        let mut entry_opt = self.mem_table.get(key).cloned();
         if entry_opt.is_none() {
-            // TODO : load from SSTable
-            entry_opt = None;
+            match SSTableQuerier::new(&self.dir) {
+                Ok(querier) => {
+                    entry_opt = querier.query(key);
+                }
+                Err(e) => {
+                    eprintln!("SSTable querier error: {}", e);
+                }
+            }
         }
 
         let entry = entry_opt?;
@@ -36,8 +44,8 @@ impl Database {
         }
 
         let db_entry = DbEntry {
-            key: entry.key.clone(),
-            value: entry.value.as_ref().unwrap().clone(),
+            key: entry.key,
+            value: entry.value.unwrap(),
             timestamp: entry.timestamp,
         };
         Some(db_entry)
@@ -54,8 +62,6 @@ impl Database {
 
         // mem_table
         self.mem_table.set(key, value, timestamp);
-
-        // TODO -> persist data to SSTable
 
         Ok(1)
     }

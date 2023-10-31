@@ -8,7 +8,7 @@ pub struct DbEntry {
 }
 
 /// Data Entry
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Entry {
     pub key: Vec<u8>,
     pub value: Option<Vec<u8>>, // the vaule will be None when the entry is deleted

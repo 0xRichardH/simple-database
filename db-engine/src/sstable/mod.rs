@@ -3,7 +3,7 @@ mod sstable_querier;
 mod sstable_reader;
 mod sstable_writer;
 
-pub use self::sstable_index::*;
+pub use self::sstable_querier::*;
 
 use crate::prelude::*;
 use std::path::PathBuf;
