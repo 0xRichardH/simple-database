@@ -44,6 +44,7 @@ mod tests {
         let mut sst_reader = SSTableReader::new(&path)?;
         assert_entry(&sst_reader.get(b"test1").unwrap(), &entry_1);
         assert_entry(&sst_reader.get(b"test2").unwrap(), &entry_2);
+        assert!(sst_reader.get(b"test3").is_none());
 
         temp_dir.close()?;
         Ok(())
@@ -70,6 +71,7 @@ mod tests {
         let mut new_sst_reader = SSTableReader::new(&path)?;
         assert_entry(&new_sst_reader.get(b"test1").unwrap(), &entry_1);
         assert_entry(&new_sst_reader.get(b"test2").unwrap(), &entry_2);
+        assert!(new_sst_reader.get(b"test3").is_none());
 
         Ok(())
     }
