@@ -1,10 +1,7 @@
 use anyhow::{Context, Result};
-use std::{
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::path::PathBuf;
 
-use crate::{mem_table::MemTable, prelude::*, wal::WriteAheadLog};
+use crate::{mem_table::MemTable, prelude::*, utils::*, wal::WriteAheadLog};
 
 pub struct Database {
     dir: PathBuf,
@@ -43,7 +40,7 @@ impl Database {
     }
 
     pub fn set(&mut self, key: &[u8], value: &[u8]) -> Result<usize> {
-        let timestamp = self.new_timestamp()?;
+        let timestamp = micros_now()?;
 
         // wal
         self.wal
@@ -60,7 +57,7 @@ impl Database {
     }
 
     pub fn delete(&mut self, key: &[u8]) -> Result<usize> {
-        let timestamp = self.new_timestamp()?;
+        let timestamp = micros_now()?;
 
         // wal
         self.wal.delete(key, timestamp)?;
@@ -73,12 +70,4 @@ impl Database {
     }
 
     // TODO scan
-
-    fn new_timestamp(&self) -> Result<u128> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("generate new timestamp")?
-            .as_micros();
-        Ok(timestamp)
-    }
 }

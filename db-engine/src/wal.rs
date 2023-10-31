@@ -3,10 +3,13 @@ use std::{
     fs::{remove_file, File, OpenOptions},
     io::{self, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{mem_table::MemTable, prelude::*, utils};
+use crate::{
+    mem_table::MemTable,
+    prelude::*,
+    utils::{self, micros_now},
+};
 
 /// Write Ahead Log
 pub struct WriteAheadLog {
@@ -17,9 +20,8 @@ pub struct WriteAheadLog {
 impl WriteAheadLog {
     /// Creates a new WAL in a given directory.
     pub fn new(dir: &Path) -> Result<Self> {
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
-        let rand_uuid = uuid::Uuid::new_v4();
-        let path = Path::new(dir).join(format!("{}-{}.wal", timestamp, rand_uuid));
+        let timestamp = micros_now()?;
+        let path = Path::new(dir).join(format!("{}.wal", timestamp));
         Self::from_path(&path)
     }
 
