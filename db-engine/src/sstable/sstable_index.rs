@@ -7,6 +7,7 @@ use std::{
 };
 
 /// Sorted String Table Index
+#[derive(Debug)]
 pub struct SSTableIndex {
     indexs: BTreeMap<Vec<u8>, u64>,
     path: PathBuf,
@@ -24,7 +25,6 @@ impl SSTableIndexBuilder {
     }
 
     pub fn indexs(mut self) -> Result<Self> {
-        dbg!(&self.0.path);
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
