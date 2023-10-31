@@ -1,3 +1,4 @@
+pub mod database;
 mod entries;
 mod errors;
 mod mem_table;

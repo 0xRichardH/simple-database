@@ -7,4 +7,3 @@ pub enum Error {
     #[error("Invalid Path: {0}")]
     InvalidPath(PathBuf),
 }
-
