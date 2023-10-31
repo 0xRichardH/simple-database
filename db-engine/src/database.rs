@@ -24,9 +24,13 @@ impl Database {
     }
 
     pub fn get(self, key: &[u8]) -> Option<DbEntry> {
-        // TODO : load from SSTable
+        let mut entry_opt = self.mem_table.get(key);
+        if entry_opt.is_none() {
+            // TODO : load from SSTable
+            entry_opt = None;
+        }
 
-        let entry = self.mem_table.get(key)?;
+        let entry = entry_opt?;
         if entry.is_deleted() {
             return None;
         }
