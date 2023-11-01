@@ -85,6 +85,10 @@ impl WriteAheadLog {
     pub fn flush(&mut self) -> io::Result<()> {
         self.writer.flush()
     }
+
+    pub fn path(&self) -> PathBuf {
+        self.path.clone()
+    }
 }
 
 /// WAL Iterator will iterate over the items in the WAL file.
