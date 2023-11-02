@@ -1,9 +1,16 @@
+use anyhow::Result;
+use std::sync::Arc;
+
 use axum::{
-    extract::Path,
+    extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::IntoResponse,
 };
 
-pub async fn get_handler(Path(key): Path<String>) -> Response {
-    (StatusCode::OK, "Ok").into_response()
+use crate::app_state::AppState;
+
+pub async fn get_handler(State(state): State<AppState>, Path(key): Path<String>) -> Result<()> {
+    // FIXME: Database is not thread safe
+    // let db = state.db.clone().lock()?;
+    Ok(())
 }
