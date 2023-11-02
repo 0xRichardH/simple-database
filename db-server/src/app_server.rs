@@ -53,7 +53,11 @@ impl AppServerBuilder {
 
 fn init_tracing_subscriber() {
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from_default_env())
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                "db_server=debug,tower_http=debug,axum::rejection=trace".into()
+            }),
+        )
         .with(tracing_subscriber::fmt::layer().json())
         .init();
 }
