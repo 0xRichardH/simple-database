@@ -1,3 +1,4 @@
+mod app_error;
 mod app_server;
 mod app_state;
 mod handlers;
