@@ -1,6 +1,9 @@
 use std::io::{BufReader, BufWriter, Read, Write};
 
+use serde::Serialize;
+
 /// Database Entry
+#[derive(Serialize)]
 pub struct DbEntry {
     pub key: Vec<u8>,
     pub value: Vec<u8>,

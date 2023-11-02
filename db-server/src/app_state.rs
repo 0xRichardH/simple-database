@@ -1,15 +1,11 @@
 use anyhow::{Context, Result};
-use std::{
-    fs::create_dir_all,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{fs::create_dir_all, path::PathBuf, sync::Arc};
 
-use db_engine::database::{Database, DatabaseBuilder};
+use db_engine::{Database, DatabaseBuilder};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db: Arc<Mutex<Database>>,
+    pub db: Arc<Database>,
 }
 
 impl AppState {
@@ -19,8 +15,6 @@ impl AppState {
 
         let db = DatabaseBuilder::new(db_dir_path)?.build();
 
-        Ok(Self {
-            db: Arc::new(Mutex::new(db)),
-        })
+        Ok(Self { db: Arc::new(db) })
     }
 }

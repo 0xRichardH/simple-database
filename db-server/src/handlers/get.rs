@@ -1,12 +1,18 @@
-use axum::extract::{Path, State};
+use std::sync::Arc;
 
-use crate::{app_error::AppError, app_state::AppState};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
+use db_engine::DbEntry;
+
+use crate::app_state::AppState;
 
 pub async fn get_handler(
     State(state): State<AppState>,
     Path(key): Path<String>,
-) -> Result<(), AppError> {
-    // FIXME: Database is not thread safe
-    // let db = state.db.clone().lock()?;
-    Ok(())
+) -> Json<Option<DbEntry>> {
+    let db = Arc::clone(&state.db);
+    let entry = db.get(key.as_bytes());
+    Json(entry)
 }
