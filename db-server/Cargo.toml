@@ -1,0 +1,16 @@
+[package]
+name = "db-server"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.75"
+axum = { version = "0.6.20", features = ["tracing"] }
+db-engine = { version = "0.1.0", path = "../db-engine" }
+serde = { version = "1.0.190", features = ["derive"] }
+tokio = { version = "1.33.0", features = ["full"] }
+tower-http = { version = "0.4.4", features = ["trace"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter", "json"] }
