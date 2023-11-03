@@ -120,8 +120,7 @@ impl Stream for WALIterator {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        let mut reader = self.get_mut().reader;
-        let entry_future = Entry::read_from(&mut reader);
+        let entry_future = Entry::read_from(&mut self.get_mut().reader);
         Box::pin(entry_future).as_mut().poll(cx)
     }
 }
@@ -174,7 +173,8 @@ mod tests {
             Some(b"Lime Smoothie"),
             timestamp,
             false,
-        );
+        )
+        .await;
 
         temp_dir.close().unwrap();
     }
@@ -206,7 +206,7 @@ mod tests {
         let mut reader = BufReader::new(file);
 
         for e in entries.iter() {
-            check_entry(&mut reader, e.0, e.1, timestamp, false);
+            check_entry(&mut reader, e.0, e.1, timestamp, false).await;
         }
 
         temp_dir.close().unwrap();
@@ -243,10 +243,10 @@ mod tests {
         let mut reader = BufReader::new(file);
 
         for e in entries.iter() {
-            check_entry(&mut reader, e.0, e.1, timestamp, false);
+            check_entry(&mut reader, e.0, e.1, timestamp, false).await;
         }
         for e in entries.iter() {
-            check_entry(&mut reader, e.0, None, timestamp, true);
+            check_entry(&mut reader, e.0, None, timestamp, true).await;
         }
 
         temp_dir.close().unwrap();
@@ -294,7 +294,7 @@ mod tests {
         let mut reader = BufReader::new(file);
 
         for (i, e) in entries.iter().enumerate() {
-            check_entry(&mut reader, e.0, e.1, i as u128, false);
+            check_entry(&mut reader, e.0, e.1, i as u128, false).await;
 
             let mem_e = new_mem_table.get(e.0).unwrap();
             assert_eq!(mem_e.key, e.0);
@@ -342,7 +342,7 @@ mod tests {
         let mut reader = BufReader::new(file);
 
         for (i, e) in entries_1.iter().enumerate() {
-            check_entry(&mut reader, e.0, e.1, i as u128, false);
+            check_entry(&mut reader, e.0, e.1, i as u128, false).await;
 
             let mem_e = new_mem_table.get(e.0).unwrap();
             if i != 2 {
@@ -356,7 +356,7 @@ mod tests {
             }
         }
         for (i, e) in entries_2.iter().enumerate() {
-            check_entry(&mut reader, e.0, e.1, (i + 3) as u128, false);
+            check_entry(&mut reader, e.0, e.1, (i + 3) as u128, false).await;
 
             let mem_e = new_mem_table.get(e.0).unwrap();
             assert_eq!(mem_e.key, e.0);
