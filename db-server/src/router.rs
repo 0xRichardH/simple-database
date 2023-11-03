@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use axum::{
     extract::MatchedPath,
     http::Request,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use tower_http::trace::TraceLayer;
@@ -35,8 +35,9 @@ pub async fn create() -> Result<Router> {
 
 fn api_router(state: AppState) -> Router {
     Router::new()
-        .route("/api/get/:key", get(get_handler))
-        .route("/api/set/:key", post(set_handler))
+        .route("/api/entry/:key", get(get_handler))
+        .route("/api/entry/:key", post(set_handler))
+        .route("/api/entry/:key", delete(delete_handler))
         .with_state(state)
         .fallback(not_found_handler)
 }
