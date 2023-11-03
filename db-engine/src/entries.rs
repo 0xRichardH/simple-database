@@ -1,10 +1,8 @@
-use serde::Serialize;
 use tokio::{
     fs::File,
     io::{self, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter},
 };
 /// Database Entry
-#[derive(Serialize)]
 pub struct DbEntry {
     pub key: Vec<u8>,
     pub value: Vec<u8>,

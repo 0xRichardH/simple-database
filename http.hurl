@@ -12,6 +12,6 @@ body contains "1"
 
 
 # Get
-GET http://127.0.0.1:8080/api/get/test
+GET http://127.0.0.1:8080/api/get/{{key}}
 Content-Type: application/json
 HTTP 200
