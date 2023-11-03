@@ -1,9 +1,13 @@
 use anyhow::Result;
 use std::{
-    fs::{remove_file, File, OpenOptions},
-    io::{self, BufReader, BufWriter, Write},
+    future::Future,
     path::{Path, PathBuf},
 };
+use tokio::{
+    fs::{remove_file, File, OpenOptions},
+    io::{self, AsyncWriteExt, BufReader, BufWriter},
+};
+use tokio_stream::{Stream, StreamExt};
 
 use crate::{
     mem_table::MemTable,
@@ -19,15 +23,19 @@ pub struct WriteAheadLog {
 
 impl WriteAheadLog {
     /// Creates a new WAL in a given directory.
-    pub fn new(dir: &Path) -> Result<Self> {
+    pub async fn new(dir: &Path) -> Result<Self> {
         let timestamp = micros_now()?;
         let path = Path::new(dir).join(format!("{}.wal", timestamp));
-        Self::from_path(&path)
+        Self::from_path(&path).await
     }
 
     /// Creates a WAL from an existing file path.
-    pub fn from_path(path: &Path) -> Result<Self> {
-        let file = OpenOptions::new().append(true).create(true).open(path)?;
+    pub async fn from_path(path: &Path) -> Result<Self> {
+        let file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)
+            .await?;
         let writer = BufWriter::new(file);
         Ok(Self {
             writer,
@@ -37,53 +45,54 @@ impl WriteAheadLog {
 
     /// Restore our MemTable and WAL from a directory.
     /// We need to replay all of the operations.
-    pub fn restore_from_dir(dir: &Path) -> Result<(WriteAheadLog, MemTable)> {
+    pub async fn restore_from_dir(dir: &Path) -> Result<(WriteAheadLog, MemTable)> {
         let mut wal_files = utils::get_files_with_ext(dir, "wal")?;
         wal_files.sort();
 
         let mut new_memtable = MemTable::new();
-        let mut new_wal = WriteAheadLog::new(dir)?;
+        let mut new_wal = WriteAheadLog::new(dir).await?;
         for file in wal_files.iter() {
-            let wal = WriteAheadLog::from_path(file)?;
-            let wal_iter: WALIterator = wal.try_into()?;
-            for entry in wal_iter {
+            let wal = WriteAheadLog::from_path(file).await?;
+            let mut wal_iter = WALIterator::new(wal.path).await?;
+            while let Some(entry) = wal_iter.next().await {
                 let key = entry.key.as_slice();
                 let timestamp = entry.timestamp;
                 if entry.is_deleted() {
-                    new_wal.delete(key, timestamp)?;
+                    new_wal.delete(key, timestamp).await?;
                     new_memtable.delete(key, timestamp);
                 } else {
                     let value = entry.value.unwrap();
-                    new_wal.set(key, value.as_slice(), timestamp)?;
+                    new_wal.set(key, value.as_slice(), timestamp).await?;
                     new_memtable.set(key, value.as_slice(), timestamp);
                 }
             }
         }
-        new_wal.flush()?;
+        new_wal.flush().await?;
 
         // clean up the old WAL files
         for file in wal_files.into_iter() {
-            remove_file(file)?;
+            // FIXME concurrent
+            remove_file(file).await?;
         }
 
         Ok((new_wal, new_memtable))
     }
 
     /// Sets a Key-Value pair and the operation is appended to the WAL.
-    pub fn set(&mut self, key: &[u8], value: &[u8], timestamp: u128) -> io::Result<()> {
+    pub async fn set(&mut self, key: &[u8], value: &[u8], timestamp: u128) -> io::Result<()> {
         let entry = Entry::new(key.to_vec(), Some(value.to_vec()), timestamp);
-        entry.write_to(&mut self.writer)
+        entry.write_to(&mut self.writer).await
     }
 
     /// Deletes a Key-Value pair and the operation is appended to the WAL.
-    pub fn delete(&mut self, key: &[u8], timestamp: u128) -> io::Result<()> {
+    pub async fn delete(&mut self, key: &[u8], timestamp: u128) -> io::Result<()> {
         let entry = Entry::new(key.to_vec(), None, timestamp);
-        entry.write_to(&mut self.writer)
+        entry.write_to(&mut self.writer).await
     }
 
     /// Flushes the WAL to disk.
-    pub fn flush(&mut self) -> io::Result<()> {
-        self.writer.flush()
+    pub async fn flush(&mut self) -> io::Result<()> {
+        self.writer.flush().await
     }
 
     pub fn path(&self) -> PathBuf {
@@ -97,55 +106,54 @@ pub struct WALIterator {
 }
 
 impl WALIterator {
-    pub fn new(path: PathBuf) -> io::Result<Self> {
-        let file = OpenOptions::new().read(true).open(path)?;
+    pub async fn new(path: PathBuf) -> io::Result<Self> {
+        let file = OpenOptions::new().read(true).open(path).await?;
         let reader = BufReader::new(file);
         Ok(Self { reader })
     }
 }
 
-impl Iterator for WALIterator {
+impl Stream for WALIterator {
     type Item = Entry;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        Entry::read_from(&mut self.reader)
-    }
-}
-
-impl TryFrom<WriteAheadLog> for WALIterator {
-    type Error = io::Error;
-
-    fn try_from(value: WriteAheadLog) -> std::result::Result<Self, Self::Error> {
-        WALIterator::new(value.path)
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let mut reader = self.get_mut().reader;
+        let entry_future = Entry::read_from(&mut reader);
+        Box::pin(entry_future).as_mut().poll(cx)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use tempdir::TempDir;
+    use tokio::{
+        fs::{metadata, File, OpenOptions},
+        io::BufReader,
+    };
 
     use crate::prelude::Entry;
     use crate::wal::WriteAheadLog;
-    use std::fs::{metadata, File, OpenOptions};
-    use std::io::BufReader;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn check_entry(
+    async fn check_entry(
         reader: &mut BufReader<File>,
         key: &[u8],
         value: Option<&[u8]>,
         timestamp: u128,
         deleted: bool,
     ) {
-        let entry = Entry::read_from(reader).unwrap();
+        let entry = Entry::read_from(reader).await.unwrap();
         assert_eq!(entry.key, key);
         assert_eq!(entry.value.as_deref(), value);
         assert_eq!(entry.timestamp, timestamp);
         assert_eq!(entry.is_deleted(), deleted);
     }
 
-    #[test]
-    fn test_write_one() {
+    #[tokio::test]
+    async fn test_write_one() {
         let temp_dir = TempDir::new("test_write_one").unwrap();
         let dir = temp_dir.path();
         let timestamp = SystemTime::now()
@@ -153,11 +161,11 @@ mod tests {
             .unwrap()
             .as_micros();
 
-        let mut wal = WriteAheadLog::new(dir).unwrap();
-        wal.set(b"Lime", b"Lime Smoothie", timestamp).unwrap();
-        wal.flush().unwrap();
+        let mut wal = WriteAheadLog::new(dir).await.unwrap();
+        wal.set(b"Lime", b"Lime Smoothie", timestamp).await.unwrap();
+        wal.flush().await.unwrap();
 
-        let file = OpenOptions::new().read(true).open(&wal.path).unwrap();
+        let file = OpenOptions::new().read(true).open(&wal.path).await.unwrap();
         let mut reader = BufReader::new(file);
 
         check_entry(
@@ -171,8 +179,8 @@ mod tests {
         temp_dir.close().unwrap();
     }
 
-    #[test]
-    fn test_write_many() {
+    #[tokio::test]
+    async fn test_write_many() {
         let temp_dir = TempDir::new("test_write_many").unwrap();
         let dir = temp_dir.path();
 
@@ -187,14 +195,14 @@ mod tests {
             (b"Orange", Some(b"Orange Smoothie")),
         ];
 
-        let mut wal = WriteAheadLog::new(dir).unwrap();
+        let mut wal = WriteAheadLog::new(dir).await.unwrap();
 
         for e in entries.iter() {
-            wal.set(e.0, e.1.unwrap(), timestamp).unwrap();
+            wal.set(e.0, e.1.unwrap(), timestamp).await.unwrap();
         }
-        wal.flush().unwrap();
+        wal.flush().await.unwrap();
 
-        let file = OpenOptions::new().read(true).open(&wal.path).unwrap();
+        let file = OpenOptions::new().read(true).open(&wal.path).await.unwrap();
         let mut reader = BufReader::new(file);
 
         for e in entries.iter() {
@@ -204,8 +212,8 @@ mod tests {
         temp_dir.close().unwrap();
     }
 
-    #[test]
-    fn test_write_delete() {
+    #[tokio::test]
+    async fn test_write_delete() {
         let temp_dir = TempDir::new("test_write_delete").unwrap();
         let dir = temp_dir.path();
 
@@ -220,18 +228,18 @@ mod tests {
             (b"Orange", Some(b"Orange Smoothie")),
         ];
 
-        let mut wal = WriteAheadLog::new(dir).unwrap();
+        let mut wal = WriteAheadLog::new(dir).await.unwrap();
 
         for e in entries.iter() {
-            wal.set(e.0, e.1.unwrap(), timestamp).unwrap();
+            wal.set(e.0, e.1.unwrap(), timestamp).await.unwrap();
         }
         for e in entries.iter() {
-            wal.delete(e.0, timestamp).unwrap();
+            wal.delete(e.0, timestamp).await.unwrap();
         }
 
-        wal.flush().unwrap();
+        wal.flush().await.unwrap();
 
-        let file = OpenOptions::new().read(true).open(&wal.path).unwrap();
+        let file = OpenOptions::new().read(true).open(&wal.path).await.unwrap();
         let mut reader = BufReader::new(file);
 
         for e in entries.iter() {
@@ -244,22 +252,22 @@ mod tests {
         temp_dir.close().unwrap();
     }
 
-    #[test]
-    fn test_read_wal_none() {
+    #[tokio::test]
+    async fn test_read_wal_none() {
         let temp_dir = TempDir::new("test_read_wal_none").unwrap();
         let dir = temp_dir.path();
 
-        let (new_wal, new_mem_table) = WriteAheadLog::restore_from_dir(dir).unwrap();
+        let (new_wal, new_mem_table) = WriteAheadLog::restore_from_dir(dir).await.unwrap();
         assert_eq!(new_mem_table.len(), 0);
 
-        let m = metadata(new_wal.path).unwrap();
+        let m = metadata(new_wal.path).await.unwrap();
         assert_eq!(m.len(), 0);
 
         temp_dir.close().unwrap();
     }
 
-    #[test]
-    fn test_read_wal_one() {
+    #[tokio::test]
+    async fn test_read_wal_one() {
         let temp_dir = TempDir::new("test_read_wal_one").unwrap();
         let dir = temp_dir.path();
 
@@ -269,16 +277,20 @@ mod tests {
             (b"Orange", Some(b"Orange Smoothie")),
         ];
 
-        let mut wal = WriteAheadLog::new(dir).unwrap();
+        let mut wal = WriteAheadLog::new(dir).await.unwrap();
 
         for (i, e) in entries.iter().enumerate() {
-            wal.set(e.0, e.1.unwrap(), i as u128).unwrap();
+            wal.set(e.0, e.1.unwrap(), i as u128).await.unwrap();
         }
-        wal.flush().unwrap();
+        wal.flush().await.unwrap();
 
-        let (new_wal, new_mem_table) = WriteAheadLog::restore_from_dir(dir).unwrap();
+        let (new_wal, new_mem_table) = WriteAheadLog::restore_from_dir(dir).await.unwrap();
 
-        let file = OpenOptions::new().read(true).open(&new_wal.path).unwrap();
+        let file = OpenOptions::new()
+            .read(true)
+            .open(&new_wal.path)
+            .await
+            .unwrap();
         let mut reader = BufReader::new(file);
 
         for (i, e) in entries.iter().enumerate() {
@@ -293,8 +305,8 @@ mod tests {
         temp_dir.close().unwrap();
     }
 
-    #[test]
-    fn test_read_wal_multiple() {
+    #[tokio::test]
+    async fn test_read_wal_multiple() {
         let temp_dir = TempDir::new("test_read_wal_multiple").unwrap();
         let dir = temp_dir.path();
 
@@ -303,26 +315,30 @@ mod tests {
             (b"Lime", Some(b"Lime Smoothie")),
             (b"Orange", Some(b"Orange Smoothie")),
         ];
-        let mut wal_1 = WriteAheadLog::new(dir).unwrap();
+        let mut wal_1 = WriteAheadLog::new(dir).await.unwrap();
         for (i, e) in entries_1.iter().enumerate() {
-            wal_1.set(e.0, e.1.unwrap(), i as u128).unwrap();
+            wal_1.set(e.0, e.1.unwrap(), i as u128).await.unwrap();
         }
-        wal_1.flush().unwrap();
+        wal_1.flush().await.unwrap();
 
         let entries_2: Vec<(&[u8], Option<&[u8]>)> = vec![
             (b"Strawberry", Some(b"Strawberry Smoothie")),
             (b"Blueberry", Some(b"Blueberry Smoothie")),
             (b"Orange", Some(b"Orange Milkshake")),
         ];
-        let mut wal_2 = WriteAheadLog::new(dir).unwrap();
+        let mut wal_2 = WriteAheadLog::new(dir).await.unwrap();
         for (i, e) in entries_2.iter().enumerate() {
-            wal_2.set(e.0, e.1.unwrap(), (i + 3) as u128).unwrap();
+            wal_2.set(e.0, e.1.unwrap(), (i + 3) as u128).await.unwrap();
         }
-        wal_2.flush().unwrap();
+        wal_2.flush().await.unwrap();
 
-        let (new_wal, new_mem_table) = WriteAheadLog::restore_from_dir(dir).unwrap();
+        let (new_wal, new_mem_table) = WriteAheadLog::restore_from_dir(dir).await.unwrap();
 
-        let file = OpenOptions::new().read(true).open(&new_wal.path).unwrap();
+        let file = OpenOptions::new()
+            .read(true)
+            .open(&new_wal.path)
+            .await
+            .unwrap();
         let mut reader = BufReader::new(file);
 
         for (i, e) in entries_1.iter().enumerate() {
