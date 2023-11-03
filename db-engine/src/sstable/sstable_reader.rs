@@ -1,8 +1,8 @@
 use anyhow::Result;
-use std::{
+use std::path::PathBuf;
+use tokio::{
     fs::{File, OpenOptions},
-    io::{self, BufReader, Seek},
-    path::PathBuf,
+    io::{self, AsyncSeekExt, BufReader},
 };
 
 use crate::prelude::*;
@@ -19,21 +19,21 @@ pub struct SSTableReader {
 }
 
 impl SSTableReader {
-    pub fn new(path: &PathBuf) -> Result<Self> {
+    pub async fn new(path: &PathBuf) -> Result<Self> {
         let index_path = get_index_path(path)?;
-        let index = SSTableIndexBuilder::new(index_path).indexs()?.build();
+        let index = SSTableIndexBuilder::new(index_path).indexs().await?.build();
 
-        let file = OpenOptions::new().write(true).read(true).open(path)?;
+        let file = OpenOptions::new().write(true).read(true).open(path).await?;
         let reader = BufReader::new(file);
 
         Ok(Self { index, reader })
     }
 
     /// Get Entry from SSTable file
-    pub fn get(&mut self, key: &[u8]) -> Option<Entry> {
+    pub async fn get(&mut self, key: &[u8]) -> Option<Entry> {
         if let Some(offset) = self.index.get(key) {
-            self.reader.seek(io::SeekFrom::Start(*offset)).ok()?;
-            return Entry::read_from(&mut self.reader);
+            self.reader.seek(io::SeekFrom::Start(*offset)).await.ok()?;
+            return Entry::read_from(&mut self.reader).await;
         }
 
         None

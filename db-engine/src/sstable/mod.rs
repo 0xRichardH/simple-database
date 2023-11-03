@@ -27,48 +27,54 @@ mod tests {
     use super::{sstable_reader::SSTableReader, sstable_writer::SSTableWriter, *};
     use anyhow::Result;
 
-    #[test]
-    fn it_creates_new_sstable_file() -> Result<()> {
+    #[tokio::test]
+    async fn it_creates_new_sstable_file() -> Result<()> {
         let temp_dir = TempDir::new("sstable_file")?;
         let path = temp_dir.path().join("test.db");
 
-        let mut sst_writer = SSTableWriter::new(&path)?;
+        let mut sst_writer = SSTableWriter::new(&path).await?;
         let entry_1 = Entry::new(b"test1".to_vec(), Some(b"hello").map(|i| i.to_vec()), 1);
         let entry_2 = Entry::new(b"test2".to_vec(), Some(b"world").map(|i| i.to_vec()), 2);
 
         // seed the data
-        sst_writer.set(&entry_1)?.set(&entry_2)?.flush()?;
+        sst_writer
+            .set(&entry_1)
+            .await?
+            .set(&entry_2)
+            .await?
+            .flush()
+            .await?;
 
         // persist to file
-        let mut sst_reader = SSTableReader::new(&path)?;
-        assert_entry(&sst_reader.get(b"test1").unwrap(), &entry_1);
-        assert_entry(&sst_reader.get(b"test2").unwrap(), &entry_2);
-        assert!(sst_reader.get(b"test3").is_none());
+        let mut sst_reader = SSTableReader::new(&path).await?;
+        assert_entry(&sst_reader.get(b"test1").await.unwrap(), &entry_1);
+        assert_entry(&sst_reader.get(b"test2").await.unwrap(), &entry_2);
+        assert!(sst_reader.get(b"test3").await.is_none());
 
         temp_dir.close()?;
         Ok(())
     }
 
-    #[test]
-    fn it_updates_the_existing_sstable_file() -> Result<()> {
+    #[tokio::test]
+    async fn it_updates_the_existing_sstable_file() -> Result<()> {
         let temp_dir = TempDir::new("sstable_file_update")?;
         let path = temp_dir.path().join("test.db");
 
         // seed
-        let mut sst_writer = SSTableWriter::new(&path)?;
+        let mut sst_writer = SSTableWriter::new(&path).await?;
         let entry_1 = Entry::new(b"test1".to_vec(), Some(b"hello").map(|i| i.to_vec()), 1);
-        sst_writer.set(&entry_1)?.flush()?;
-        let mut sst_reader = SSTableReader::new(&path)?;
-        assert_entry(&sst_reader.get(b"test1").unwrap(), &entry_1);
+        sst_writer.set(&entry_1).await?.flush().await?;
+        let mut sst_reader = SSTableReader::new(&path).await?;
+        assert_entry(&sst_reader.get(b"test1").await.unwrap(), &entry_1);
 
         // load from existing file
-        let mut new_sst_writer = SSTableWriter::new(&path)?;
+        let mut new_sst_writer = SSTableWriter::new(&path).await?;
         let entry_2 = Entry::new(b"test2".to_vec(), Some(b"world").map(|i| i.to_vec()), 2);
-        new_sst_writer.set(&entry_2)?.flush()?;
-        let mut new_sst_reader = SSTableReader::new(&path)?;
-        assert_entry(&new_sst_reader.get(b"test1").unwrap(), &entry_1);
-        assert_entry(&new_sst_reader.get(b"test2").unwrap(), &entry_2);
-        assert!(new_sst_reader.get(b"test3").is_none());
+        new_sst_writer.set(&entry_2).await?.flush().await?;
+        let mut new_sst_reader = SSTableReader::new(&path).await?;
+        assert_entry(&new_sst_reader.get(b"test1").await.unwrap(), &entry_1);
+        assert_entry(&new_sst_reader.get(b"test2").await.unwrap(), &entry_2);
+        assert!(new_sst_reader.get(b"test3").await.is_none());
 
         Ok(())
     }

@@ -1,8 +1,8 @@
 use anyhow::Result;
-use std::{
+use std::path::PathBuf;
+use tokio::{
     fs::{File, OpenOptions},
-    io::{self, BufWriter, Seek, Write},
-    path::PathBuf,
+    io::{self, AsyncSeekExt, AsyncWriteExt, BufWriter},
 };
 
 use crate::prelude::*;
@@ -20,16 +20,17 @@ pub struct SSTableWriter {
 }
 
 impl SSTableWriter {
-    pub fn new(path: &PathBuf) -> Result<Self> {
+    pub async fn new(path: &PathBuf) -> Result<Self> {
         let index_path = get_index_path(path)?;
-        let index = SSTableIndexBuilder::new(index_path).indexs()?.build();
+        let index = SSTableIndexBuilder::new(index_path).indexs().await?.build();
 
         let file = OpenOptions::new()
             .write(true)
             .create(true)
             .append(true)
-            .open(path)?;
-        let offset = file.metadata()?.len();
+            .open(path)
+            .await?;
+        let offset = file.metadata().await?.len();
         let writer = BufWriter::new(file);
 
         Ok(Self {
@@ -40,17 +41,22 @@ impl SSTableWriter {
     }
 
     /// Set Entry to SSTable
-    pub fn set(&mut self, entry: &Entry) -> io::Result<&mut Self> {
-        entry.write_to(&mut self.writer)?;
+    pub async fn set(&mut self, entry: &Entry) -> io::Result<&mut Self> {
+        entry.write_to(&mut self.writer).await?;
         self.index.insert(entry.key.as_slice(), self.offset);
-        self.offset += self.writer.stream_position()?;
+        self.offset += self.writer.stream_position().await?;
         Ok(self)
     }
 
     /// Flush SSTable to the file
-    pub fn flush(&mut self) -> Result<&mut Self> {
-        self.index.persist()?;
-        self.writer.flush()?;
+    pub async fn flush(&mut self) -> Result<&mut Self> {
+        let persist_index = self.index.persist();
+        let flush_db = self.writer.flush();
+
+        let (persist_result, flush_result) = tokio::join!(persist_index, flush_db);
+        persist_result?;
+        flush_result?;
+
         Ok(self)
     }
 }
