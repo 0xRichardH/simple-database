@@ -149,12 +149,12 @@ mod tests {
 
         assert!(db.get(b"test").await.is_none());
         assert_eq!(db.mem_table.size(), 0);
-        assert_eq!(db.mem_table.len(), 0);
+        assert_eq!(db.mem_table.entries().len(), 0);
 
         let result = db.set(b"test", b"hello").await?;
         assert_eq!(result, 1);
         assert_ne!(db.mem_table.size(), 0);
-        assert_eq!(db.mem_table.len(), 1);
+        assert_eq!(db.mem_table.entries().len(), 1);
 
         let entry = db.get(b"test").await.unwrap();
         assert_eq!(entry.key, b"test");
@@ -224,7 +224,7 @@ mod tests {
         db.set(b"test", b"helloworld").await?;
         db.set(b"test1", b"helloworld1").await?;
         assert_eq!(db.mem_table.size(), 0);
-        assert_eq!(db.mem_table.len(), 0);
+        assert_eq!(db.mem_table.entries().len(), 0);
 
         let entry = db.get(b"test").await;
         assert!(entry.is_some());

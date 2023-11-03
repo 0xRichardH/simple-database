@@ -2,7 +2,6 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use db_engine::DbEntry;
 
 use crate::{app_error::AppError, app_state::AppState};
 

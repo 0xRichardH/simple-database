@@ -258,7 +258,7 @@ mod tests {
         let dir = temp_dir.path();
 
         let (new_wal, new_mem_table) = WriteAheadLog::restore_from_dir(dir).await.unwrap();
-        assert_eq!(new_mem_table.len(), 0);
+        assert_eq!(new_mem_table.entries().len(), 0);
 
         let m = metadata(new_wal.path).await.unwrap();
         assert_eq!(m.len(), 0);

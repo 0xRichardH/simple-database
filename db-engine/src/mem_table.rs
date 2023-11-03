@@ -80,10 +80,6 @@ impl MemTable {
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
     pub fn size(&self) -> usize {
         self.size
     }
