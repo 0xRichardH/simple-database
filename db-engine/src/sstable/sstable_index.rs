@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
-use std::{
-    collections::BTreeMap,
+use std::{collections::BTreeMap, path::PathBuf};
+use tokio::{
     fs::OpenOptions,
-    io::{Read, Write},
-    path::PathBuf,
+    io::{AsyncReadExt, AsyncWriteExt},
 };
 
 /// Sorted String Table Index
@@ -24,16 +23,18 @@ impl SSTableIndexBuilder {
         Self(index)
     }
 
-    pub fn indexs(mut self) -> Result<Self> {
+    pub async fn indexs(mut self) -> Result<Self> {
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(&self.0.path)
+            .await
             .context("open idx file to read")?;
         let mut buf = Vec::new();
         let read_size = file
             .read_to_end(&mut buf)
+            .await
             .context("read content from idx")?;
         if read_size > 0 {
             self.0.indexs = bincode::deserialize(&buf).context("deserialize idx to BTreeMap")?;
@@ -58,14 +59,17 @@ impl SSTableIndex {
     }
 
     /// Persist the indexs to file
-    pub fn persist(&mut self) -> Result<()> {
+    pub async fn persist(&mut self) -> Result<()> {
         let mut file = OpenOptions::new()
             .create(true)
             .write(true)
             .open(&self.path)
+            .await
             .context("open idx file to write")?;
         let bytes = bincode::serialize(&self.indexs).context("serialize idx to bytes")?;
-        file.write_all(&bytes).context("write idx bytes to file")?;
+        file.write_all(&bytes)
+            .await
+            .context("write idx bytes to file")?;
         Ok(())
     }
 }
@@ -76,23 +80,29 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn it_works() -> Result<()> {
+    #[tokio::test]
+    async fn it_works() -> Result<()> {
         let temp_dir = TempDir::new("sstable_index")?;
         let path = temp_dir.path().join("sstable_index.idx");
 
         // create SSTableIndex
-        let mut idx = SSTableIndexBuilder::new(path.clone()).indexs()?.build();
+        let mut idx = SSTableIndexBuilder::new(path.clone())
+            .indexs()
+            .await?
+            .build();
         assert_eq!(idx.indexs.len(), 0);
         idx.insert(b"hello", 1);
         assert_eq!(idx.indexs.len(), 1);
         assert_eq!(idx.get(b"hello"), Some(&1));
 
         // persist to file
-        idx.persist()?;
+        idx.persist().await?;
 
         // load from file
-        let mut idx_2 = SSTableIndexBuilder::new(path.clone()).indexs()?.build();
+        let mut idx_2 = SSTableIndexBuilder::new(path.clone())
+            .indexs()
+            .await?
+            .build();
         assert_eq!(idx_2.indexs.len(), 1);
         assert_eq!(idx_2.get(b"hello"), Some(&1));
 
@@ -103,8 +113,8 @@ mod tests {
         assert_eq!(idx_2.get(b"world"), Some(&2));
 
         // persist to file
-        idx_2.persist()?;
-        let idx_3 = SSTableIndexBuilder::new(path).indexs()?.build();
+        idx_2.persist().await?;
+        let idx_3 = SSTableIndexBuilder::new(path).indexs().await?.build();
         assert_eq!(idx_3.indexs.len(), 2);
 
         temp_dir.close().unwrap();
