@@ -7,15 +7,16 @@ pub use self::sstable_querier::*;
 pub use self::sstable_writer::*;
 
 use crate::prelude::*;
+use std::path::Path;
 use std::path::PathBuf;
 
-fn get_index_path(db_path: &PathBuf) -> anyhow::Result<PathBuf> {
+fn get_index_path(db_path: &Path) -> anyhow::Result<PathBuf> {
     let base_path = db_path
         .parent()
-        .ok_or(Error::InvalidPath(db_path.clone()))?;
+        .ok_or(Error::InvalidPath(db_path.to_path_buf()))?;
     let db_file_name = db_path
         .file_name()
-        .ok_or(Error::InvalidPath(db_path.clone()))?;
+        .ok_or(Error::InvalidPath(db_path.to_path_buf()))?;
     let index_path = base_path.join(format!("{}.idx", db_file_name.to_string_lossy()));
     Ok(index_path)
 }

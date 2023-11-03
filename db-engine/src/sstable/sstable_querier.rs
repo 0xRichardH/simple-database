@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::path::Path;
 use std::path::PathBuf;
 
 use crate::prelude::*;
@@ -11,7 +12,7 @@ pub struct SSTableQuerier {
 }
 
 impl SSTableQuerier {
-    pub fn new(dir: &PathBuf) -> Result<Self> {
+    pub fn new(dir: &Path) -> Result<Self> {
         let mut path_collection = utils::get_files_with_ext(dir, "db")?;
         path_collection.sort_by(|a, b| b.cmp(a));
         Ok(Self { path_collection })
