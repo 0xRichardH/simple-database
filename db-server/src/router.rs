@@ -9,8 +9,8 @@ use tower_http::trace::TraceLayer;
 
 use crate::{app_state::AppState, handlers::prelude::*};
 
-pub fn create() -> Result<Router> {
-    let api_state = AppState::new().context("create API AppState")?;
+pub async fn create() -> Result<Router> {
+    let api_state = AppState::new().await.context("create API AppState")?;
 
     let router = Router::new().merge(api_router(api_state)).layer(
         TraceLayer::new_for_http().make_span_with(|request: &Request<_>| {

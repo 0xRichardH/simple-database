@@ -9,11 +9,11 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new() -> Result<Self> {
+    pub async fn new() -> Result<Self> {
         let db_dir_path = PathBuf::from("./db");
         create_dir_all(&db_dir_path).context("create db dir")?;
 
-        let db = DatabaseBuilder::new(db_dir_path)?.build();
+        let db = DatabaseBuilder::new(db_dir_path).await?.build();
 
         Ok(Self { db: Arc::new(db) })
     }

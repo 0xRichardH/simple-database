@@ -13,7 +13,7 @@ pub async fn set_handler(
 ) -> Result<Json<usize>, AppError> {
     let db = state.db.clone();
     // FIXME
-    // let result = db.set(key.as_bytes(), value.as_bytes())?;
+    // let result = db.set(key.as_bytes(), value.as_bytes()).await?;
     let result = 1;
     Ok(Json(result))
 }

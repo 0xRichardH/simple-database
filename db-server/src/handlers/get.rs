@@ -13,6 +13,6 @@ pub async fn get_handler(
     Path(key): Path<String>,
 ) -> Json<Option<DbEntry>> {
     let db = Arc::clone(&state.db);
-    let entry = db.get(key.as_bytes());
+    let entry = db.get(key.as_bytes()).await;
     Json(entry)
 }
