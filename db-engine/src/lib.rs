@@ -1,3 +1,4 @@
+mod compaction;
 mod database;
 mod entries;
 mod errors;
