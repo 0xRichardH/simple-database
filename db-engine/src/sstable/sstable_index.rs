@@ -64,6 +64,10 @@ impl SSTableIndex {
         self.indexes.get(key)
     }
 
+    pub fn remove(&mut self, key: &[u8]) -> Option<u64> {
+        self.indexes.remove(key)
+    }
+
     /// Get the SSTable Indexes
     pub fn indexes(&self) -> &SSTableIndexType {
         &self.indexes

@@ -3,6 +3,7 @@ mod sstable_querier;
 mod sstable_reader;
 mod sstable_writer;
 
+pub use self::sstable_index::*;
 pub use self::sstable_querier::*;
 pub use self::sstable_reader::*;
 pub use self::sstable_writer::*;

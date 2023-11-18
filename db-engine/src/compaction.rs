@@ -1,10 +1,3 @@
-// - merging multiple SSTables
-//  - load sstable file which is less or equal than 10m
-//  - merge them if there are more than one files
-// - removing data (need to check each of the files)
-//   - removing deleted data
-//   - removing redundant data
-
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::path::PathBuf;
@@ -12,8 +5,8 @@ use tokio::{fs::remove_file, task::JoinSet};
 
 use crate::{
     prelude::Entry,
-    sstable::{SSTableReader, SSTableReaderScanHandler, SSTableWriter},
-    utils::{get_files_with_ext_and_size, micros_now},
+    sstable::{SSTableIndexBuilder, SSTableReader, SSTableReaderScanHandler, SSTableWriter},
+    utils::{get_files_with_ext, get_files_with_ext_and_size, micros_now},
 };
 
 pub struct Compaction {
@@ -61,7 +54,27 @@ impl Compaction {
             }
         }
 
-        // TODO: handle to be deleted keys
+        // handle to be deleted keys
+        self.remove_deleted_keys(to_be_deleted_keys)
+            .await
+            .context("remove deleted keys")?;
+
+        Ok(())
+    }
+
+    async fn remove_deleted_keys(&self, keys: Vec<Vec<u8>>) -> Result<()> {
+        let idx_files = get_files_with_ext(self.dir.as_ref(), "idx")?;
+        for file in idx_files {
+            let mut idx = SSTableIndexBuilder::new(file).indexes().await?.build();
+
+            for key in keys.iter() {
+                if idx.contains_key(key) {
+                    idx.remove(key);
+                }
+            }
+
+            idx.persist().await.context("update the idx file")?;
+        }
 
         Ok(())
     }
