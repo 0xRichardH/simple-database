@@ -52,9 +52,8 @@ impl WriteAheadLog {
 
         let mut new_memtable = MemTable::new();
         let mut new_wal = WriteAheadLog::new(dir).await?;
-        let mut remove_file_fn_set = JoinSet::new();
-        for file in wal_files.into_iter() {
-            let wal = WriteAheadLog::from_path(&file).await?;
+        for file in wal_files.iter() {
+            let wal = WriteAheadLog::from_path(file).await?;
             let mut wal_iter = WALIterator::new(wal.path).await?;
             while let Some(entry) = wal_iter.next().await {
                 let key = entry.key.as_slice();
@@ -68,11 +67,17 @@ impl WriteAheadLog {
                     new_memtable.set(key, value.as_slice(), timestamp);
                 }
             }
-            remove_file_fn_set.spawn(async move { remove_file(file).await });
         }
         new_wal.flush().await?;
 
         // clean up the old WAL files
+        let mut remove_file_fn_set =
+            wal_files
+                .into_iter()
+                .fold(JoinSet::new(), |mut fn_set, file| {
+                    fn_set.spawn(remove_file(file));
+                    fn_set
+                });
         while let Some(res) = remove_file_fn_set.join_next().await {
             if let Err(e) = res {
                 eprintln!("Failed to remove wal file: {}", e);

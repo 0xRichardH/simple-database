@@ -22,7 +22,10 @@ pub struct SSTableWriter {
 impl SSTableWriter {
     pub async fn new(path: &PathBuf) -> Result<Self> {
         let index_path = get_index_path(path)?;
-        let index = SSTableIndexBuilder::new(index_path).indexs().await?.build();
+        let index = SSTableIndexBuilder::new(index_path)
+            .indexes()
+            .await?
+            .build();
 
         let file = OpenOptions::new()
             .write(true)
@@ -38,6 +41,10 @@ impl SSTableWriter {
             writer,
             offset,
         })
+    }
+
+    pub fn contains_key(&self, key: &[u8]) -> bool {
+        self.index.contains_key(key)
     }
 
     /// Set Entry to SSTable
