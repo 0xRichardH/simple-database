@@ -8,6 +8,7 @@ mod sstable;
 mod utils;
 mod wal;
 
+pub use crate::compaction::Compaction;
 pub use crate::database::Database;
 pub use crate::database::DatabaseBuilder;
 pub use crate::entries::DbEntry;

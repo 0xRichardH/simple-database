@@ -26,6 +26,10 @@ impl Compaction {
 
     pub async fn compact(&self) -> Result<()> {
         let mut files = get_files_with_ext_and_size(&self.dir, self.ext.as_str(), self.size)?;
+        if files.is_empty() {
+            tracing::info!("Skip compacting because no sstable files found");
+            return Ok(());
+        }
         files.sort_by(|a, b| b.cmp(a));
 
         let new_sstable_path = self.dir.join(format!("{}.db", micros_now()?));
@@ -50,7 +54,7 @@ impl Compaction {
         });
         while let Some(res) = remove_file_fn_set.join_next().await {
             if let Err(e) = res {
-                eprintln!("Failed to remove old sstable file: {}", e);
+                tracing::error!("Failed to remove old sstable file: {}", e);
             }
         }
 

@@ -28,7 +28,7 @@ impl SSTableQuerier {
                     }
                 }
                 Err(e) => {
-                    eprintln!("{e:?}");
+                    tracing::error!("{e:?}");
                     return None;
                 }
             }

@@ -4,8 +4,6 @@ use anyhow::Result;
 use axum::Router;
 use tokio::signal;
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
 pub struct AppServer {
     router: Router,
     socket_address: SocketAddr,
@@ -13,8 +11,6 @@ pub struct AppServer {
 
 impl AppServer {
     pub async fn start(self) -> Result<()> {
-        init_tracing_subscriber();
-
         tracing::info!("Listening on {}", self.socket_address);
 
         axum::Server::bind(&self.socket_address)
@@ -49,17 +45,6 @@ impl AppServerBuilder {
     pub fn build(self) -> AppServer {
         self.0
     }
-}
-
-fn init_tracing_subscriber() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                "db_server=debug,tower_http=debug,axum::rejection=trace".into()
-            }),
-        )
-        .with(tracing_subscriber::fmt::layer().json())
-        .init();
 }
 
 async fn shutdown_signal() {

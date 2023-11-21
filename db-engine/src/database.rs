@@ -53,7 +53,7 @@ impl Database {
                     entry_opt = querier.query(key).await;
                 }
                 Err(e) => {
-                    eprintln!("SSTable querier error: {}", e);
+                    tracing::error!("SSTable querier error: {}", e);
                 }
             }
         }

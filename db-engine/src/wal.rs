@@ -80,7 +80,7 @@ impl WriteAheadLog {
                 });
         while let Some(res) = remove_file_fn_set.join_next().await {
             if let Err(e) = res {
-                eprintln!("Failed to remove wal file: {}", e);
+                tracing::error!("Failed to remove wal file: {}", e);
             }
         }
 
