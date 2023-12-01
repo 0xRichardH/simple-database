@@ -119,3 +119,65 @@ impl<'a, 'b> SSTableReaderScanHandler for SSTableScanHandler<'a, 'b> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use anyhow::Result;
+    use tempdir::TempDir;
+
+    use super::*;
+
+    // Helper function to create a dummy SSTable file for testing
+    async fn create_dummy_sstable_file(dir: &Path, filename: &str, entry: &Entry) -> Result<()> {
+        let file_path = dir.join(filename);
+        let mut writer = SSTableWriter::new(&file_path)
+            .await
+            .context("init sstable writer")?;
+        writer
+            .set(entry)
+            .await
+            .context("insert record")?
+            .flush()
+            .await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_compact() -> Result<()> {
+        // Setup test directory and files
+        let tmpdir = TempDir::new("test_compact")?;
+        let test_dir = tmpdir.path();
+        let entry_1 = Entry::new(b"test1".to_vec(), Some(b"hello").map(|i| i.to_vec()), 1);
+        let entry_2 = Entry::new(b"test2".to_vec(), Some(b"hello").map(|i| i.to_vec()), 2);
+        create_dummy_sstable_file(test_dir, "test1.db", &entry_1).await?;
+        create_dummy_sstable_file(test_dir, "test2.db", &entry_2).await?;
+
+        // Initialize Compaction
+        let compaction = Compaction::new(test_dir.to_path_buf(), 100, "db");
+
+        // Perform compaction
+        compaction.compact().await.context("Failed to compact")?;
+
+        // Check results
+        // 1. check if the old files are deleted
+        assert!(!test_dir.join("test1.db").exists());
+        assert!(!test_dir.join("test2.db").exists());
+        // 2. check if the new file is created
+        let files = get_files_with_ext(test_dir, "db")?;
+        assert_eq!(files.len(), 1);
+
+        // 3. check if the data in the new file are correct
+        let new_file = files.first().unwrap();
+        let mut sstable_reader = SSTableReader::new(new_file).await?;
+        assert!(sstable_reader.get(entry_1.key.as_slice()).await.is_some());
+        assert!(sstable_reader.get(entry_2.key.as_slice()).await.is_some());
+
+        // Cleanup
+        tmpdir.close().context("remove the test folders")?;
+
+        Ok(())
+    }
+}
